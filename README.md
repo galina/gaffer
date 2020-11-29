@@ -35,10 +35,10 @@ defmodule Worker do
 end
 ```
 
-start managed worker process:
+start managed worker process with some backoff:
 
 ```elixir
-> Gaffer.take(:gaffer, Worker, :start_link, [:args])
+> Gaffer.take(:gaffer, Worker, :start_link, [:args], backoff: {:const, 5000})
 
 run worker #PID<0.163.0> with args :args at 2020-11-29 14:29:15.812120
 ```

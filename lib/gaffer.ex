@@ -65,6 +65,10 @@ defmodule Gaffer do
       {:ok, pid} ->
         {:noreply, %{state | refs: Map.put(state.refs, Process.monitor(pid), {mfa, opts})}}
 
+      :ignore ->
+        Logger.info("ignore process with mfa #{inspect(mfa)}")
+        {:noreply, state}
+
       error ->
         Logger.error("failed to start worker #{inspect(error)}")
         schedule_restart(mfa, opts, state)
