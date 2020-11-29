@@ -53,7 +53,12 @@ defmodule Gaffer do
   def handle_info({:take, {m, f, a} = mfa, opts}, state) do
     %Task{} =
       Task.Supervisor.async_nolink(Gaffer.TaskSupervisor, fn ->
-        {:take_async, apply(m, f, a), mfa, opts}
+        try do
+          {:take_async, apply(m, f, a), mfa, opts}
+        rescue
+          error ->
+            {:take_async, error, mfa, opts}
+        end
       end)
 
     {:noreply, state}
@@ -70,7 +75,7 @@ defmodule Gaffer do
         {:noreply, state}
 
       error ->
-        Logger.error("failed to start worker #{inspect(error)}")
+        Logger.error("failed to start worker #{inspect(error)} with mfa #{inspect(mfa)}")
         schedule_restart(mfa, opts, state)
 
         {:noreply, state}
