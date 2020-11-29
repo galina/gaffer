@@ -32,12 +32,12 @@ defmodule Gaffer do
   end
 
   @doc ~S"""
-  Asynchronously start and manage process with mfa.
+  Asynchronously start and manage process restarts with mfa.
 
-  mfa callback should return `{:ok, pid}` if process started successfully or `:error` the otherwise.
+  mfa callback should return `{:ok, pid}` if process started successfully or error the otherwise.
   """
-  def take(gaffer, mod, fun, args) do
-    send(gaffer, {:take, {mod, fun, args}})
+  def take(gaffer, mod, fun, args, opts \\ []) do
+    send(gaffer, {:take, {mod, fun, args}, opts})
 
     :ok
   end
@@ -50,23 +50,24 @@ defmodule Gaffer do
   end
 
   @impl GenServer
-  def handle_info({:take, {m, f, a} = mfa}, state) do
+  def handle_info({:take, {m, f, a} = mfa, opts}, state) do
     %Task{} =
       Task.Supervisor.async_nolink(Gaffer.TaskSupervisor, fn ->
-        {:take_async, apply(m, f, a), mfa}
+        {:take_async, apply(m, f, a), mfa, opts}
       end)
 
     {:noreply, state}
   end
 
   @impl GenServer
-  def handle_info({_ref, {:take_async, apply_result, mfa}}, state) do
+  def handle_info({_ref, {:take_async, apply_result, mfa, opts}}, state) do
     case apply_result do
       {:ok, pid} ->
-        {:noreply, %{state | refs: Map.put(state.refs, Process.monitor(pid), mfa)}}
+        {:noreply, %{state | refs: Map.put(state.refs, Process.monitor(pid), {mfa, opts})}}
 
-      :error ->
-        schedule_restart(mfa, state)
+      error ->
+        Logger.error("failed to start worker #{inspect(error)}")
+        schedule_restart(mfa, opts, state)
 
         {:noreply, state}
     end
@@ -80,15 +81,17 @@ defmodule Gaffer do
       {nil, _} ->
         {:noreply, state}
 
-      {mfa, refs} ->
-        schedule_restart(mfa, state)
+      {{mfa, opts}, refs} ->
+        schedule_restart(mfa, opts, state)
 
         {:noreply, Map.put(state, :refs, refs)}
     end
   end
 
-  defp schedule_restart(mfa, state) do
-    Process.send_after(self(), {:take, mfa}, delay(state.backoff))
+  defp schedule_restart(mfa, opts, state) do
+    backoff = Keyword.get(opts, :backoff, state.backoff)
+
+    Process.send_after(self(), {:take, mfa, opts}, delay(backoff))
   end
 
   defp delay({:const, milliseconds}), do: milliseconds
